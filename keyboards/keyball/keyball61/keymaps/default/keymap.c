@@ -33,9 +33,14 @@ static bool     sniper_active    = false;
 static uint16_t scroll_timer     = 0;
 static bool     scroll_pressed   = false;
 static bool     scroll_active    = false;
-static uint16_t volume_timer     = 0;
-static bool     volume_pressed   = false;
-static bool     volume_active    = false;
+static uint16_t volume_timer      = 0;
+static bool     volume_pressed    = false;
+static bool     volume_active     = false;
+static int16_t  volume_accum      = 0;
+static uint16_t volume_step_timer = 0;
+
+#define VOLUME_BALL_THRESHOLD 4
+#define VOLUME_STEP_INTERVAL  200
 
 // clang-format off
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
@@ -99,6 +104,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
             } else {
                 sniper_pressed = false;
                 if (sniper_active) {
+                    layer_off(2);
                     keyball_set_cpi(sniper_saved_cpi);
                     sniper_active = false;
                 } else {
@@ -130,6 +136,7 @@ void matrix_scan_user(void) {
     if (sniper_pressed && !sniper_active && timer_elapsed(sniper_timer) > TAPPING_TERM) {
         sniper_saved_cpi = keyball_get_cpi();
         keyball_set_cpi(100);
+        layer_on(2);
         sniper_active = true;
     }
 
@@ -140,25 +147,32 @@ void matrix_scan_user(void) {
 
     if (volume_pressed && !volume_active && timer_elapsed(volume_timer) > TAPPING_TERM) {
         keyball_set_scroll_mode(true);
-        volume_active = true;
+        volume_accum      = 0;
+        volume_step_timer = timer_read();
+        volume_active     = true;
     }
 }
 
 report_mouse_t pointing_device_task_user(report_mouse_t mouse_report) {
     if (volume_active) {
-        while (mouse_report.v > 0) {
-            tap_code(KC_VOLU);
-            mouse_report.v--;
-        }
-        while (mouse_report.v < 0) {
-            tap_code(KC_VOLD);
-            mouse_report.v++;
+        volume_accum += mouse_report.v;
+        if (timer_elapsed(volume_step_timer) >= VOLUME_STEP_INTERVAL) {
+            if (volume_accum >= VOLUME_BALL_THRESHOLD) {
+                tap_code(KC_VOLU);
+                volume_accum      = 0;
+                volume_step_timer = timer_read();
+            } else if (volume_accum <= -VOLUME_BALL_THRESHOLD) {
+                tap_code(KC_VOLD);
+                volume_accum      = 0;
+                volume_step_timer = timer_read();
+            }
         }
 
         // Consume ball movement so volume mode cannot move or scroll the pointer.
         mouse_report.x = 0;
         mouse_report.y = 0;
         mouse_report.h = 0;
+        mouse_report.v = 0;
     }
     return mouse_report;
 }
