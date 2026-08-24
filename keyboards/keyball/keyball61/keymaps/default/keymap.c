@@ -21,8 +21,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "quantum.h"
 
 enum custom_keycodes {
-    SNIPER_LEFT = SAFE_RANGE,
+    SNIPER_SPACE = SAFE_RANGE,
     SCROLL_RIGHT,
+    VOLUME_LEFT,
 };
 
 static uint16_t sniper_saved_cpi = 0;
@@ -32,6 +33,9 @@ static bool     sniper_active    = false;
 static uint16_t scroll_timer     = 0;
 static bool     scroll_pressed   = false;
 static bool     scroll_active    = false;
+static uint16_t volume_timer     = 0;
+static bool     volume_pressed   = false;
+static bool     volume_active    = false;
 
 // clang-format off
 const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
@@ -40,7 +44,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     KC_TAB   , KC_Q     , KC_W     , KC_E     , KC_R     , KC_T     ,                                  KC_Y     , KC_U     , KC_I     , KC_O     , KC_P     , KC_EQL   ,
     KC_ESC   , KC_A     , KC_S     , KC_D     , KC_F     , KC_G     ,                                  KC_H     , KC_J     , KC_K     , KC_L     , KC_SCLN  , KC_QUOT  ,
     KC_LSFT  , KC_Z     , KC_X     , KC_C     , KC_V     , KC_B     , KC_LBRC  ,              KC_RBRC, KC_N     , KC_M     , KC_COMM  , KC_DOT   , KC_SLSH  , KC_RSFT  ,
-    KC_LCTL  , KC_LALT  , MO(1)    , KC_LGUI,SNIPER_LEFT,SCROLL_RIGHT,LT(2,KC_SPC),    KC_BSPC,LT(2,KC_ENT),LT(1,KC_LNG2),KC_RGUI, _______ , KC_RALT  , KC_BSLS
+    KC_LCTL  , KC_LALT  , MO(1)    , KC_LGUI,VOLUME_LEFT,SCROLL_RIGHT,SNIPER_SPACE,    KC_BSPC,LT(2,KC_ENT),LT(1,KC_LNG2),KC_RGUI, _______ , KC_RALT  , KC_BSLS
   ),
 
   [1] = LAYOUT_universal(
@@ -56,7 +60,7 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
     SSNP_VRT , _______  , KC_7     , KC_8     , KC_9     , _______  ,                                  _______  , KC_LEFT  , KC_UP    , KC_RGHT  , _______  , KC_F12   ,
     SSNP_HOR , _______  , KC_4     , KC_5     , KC_6     ,S(KC_SCLN),                                  KC_PGUP  , MS_BTN1  , MS_BTN2  , _______  , _______  , _______  ,
     _______  , _______  , KC_1     , KC_2     , KC_3     ,S(KC_MINS), S(KC_8)  ,            S(KC_9)  , KC_PGDN  , _______  , _______  , _______  , _______  , _______  ,
-    _______  , _______  , KC_0     , KC_DOT   , _______  , _______  , _______  ,             KC_DEL  , _______  , _______  , _______  , _______  , _______  , _______
+    _______  , _______  , KC_0     , KC_DOT   , KC_UP    , KC_DOWN  , _______  ,             KC_DEL  , _______  , _______  , _______  , _______  , _______  , _______
   ),
 
   [3] = LAYOUT_universal(
@@ -71,7 +75,23 @@ const uint16_t PROGMEM keymaps[][MATRIX_ROWS][MATRIX_COLS] = {
 
 bool process_record_user(uint16_t keycode, keyrecord_t *record) {
     switch (keycode) {
-        case SNIPER_LEFT:
+        case VOLUME_LEFT:
+            if (record->event.pressed) {
+                volume_timer   = timer_read();
+                volume_pressed = true;
+                volume_active  = false;
+            } else {
+                volume_pressed = false;
+                if (volume_active) {
+                    keyball_set_scroll_mode(false);
+                    volume_active = false;
+                } else {
+                    tap_code(KC_LEFT);
+                }
+            }
+            return false;
+
+        case SNIPER_SPACE:
             if (record->event.pressed) {
                 sniper_timer   = timer_read();
                 sniper_pressed = true;
@@ -82,7 +102,7 @@ bool process_record_user(uint16_t keycode, keyrecord_t *record) {
                     keyball_set_cpi(sniper_saved_cpi);
                     sniper_active = false;
                 } else {
-                    tap_code(KC_LEFT);
+                    tap_code(KC_SPC);
                 }
             }
             return false;
@@ -117,6 +137,30 @@ void matrix_scan_user(void) {
         keyball_set_scroll_mode(true);
         scroll_active = true;
     }
+
+    if (volume_pressed && !volume_active && timer_elapsed(volume_timer) > TAPPING_TERM) {
+        keyball_set_scroll_mode(true);
+        volume_active = true;
+    }
+}
+
+report_mouse_t pointing_device_task_user(report_mouse_t mouse_report) {
+    if (volume_active) {
+        while (mouse_report.v > 0) {
+            tap_code(KC_VOLU);
+            mouse_report.v--;
+        }
+        while (mouse_report.v < 0) {
+            tap_code(KC_VOLD);
+            mouse_report.v++;
+        }
+
+        // Consume ball movement so volume mode cannot move or scroll the pointer.
+        mouse_report.x = 0;
+        mouse_report.y = 0;
+        mouse_report.h = 0;
+    }
+    return mouse_report;
 }
 
 layer_state_t layer_state_set_user(layer_state_t state) {
